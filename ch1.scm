@@ -14,7 +14,7 @@
       (set! fail-count (+ fail-count 1)))))
 
 (define (run-test name)
-  (print "")
+  (print "\n")
   (print "~A\n" name)
   ((eval name (interaction-environment))))
 
@@ -44,7 +44,7 @@
            (+ a 1)) (* b (+ a 1))))
 
 (define (ex1-2)
-  (define f (/ (+ 5 4 (- 2 (- 3 ( + 6 (/ 4 5)))))
+  (define f (/ (+ 5 4 (- 2 (- 3 (+ 6 (/ 4 5)))))
                (* 3 (- 6 2) (- 2 7))))
   (test f (/ (+ 14 (/ 4 5)) -60)))
 
@@ -121,20 +121,101 @@
   #f)
 
 (define (ex1-7)
+  ;; very small numbers will may have a value below the tolerance
+  ;; very large numbers may exceed the precision of the tolerance
   (define (good-enough? guess last)
     (< (abs (- guess last)) 0.00001))
+
   (define (sqrt-iter guess x last)
     (if (good-enough? guess last)
       guess
       (sqrt-iter (improve guess x) x guess)))
+
   (define (sqrt x)
     (sqrt-iter 1.0 x 0.0))
+
   (define chicken-sqrt-2 1.4142135623731)
   (test (< (abs (- (sqrt 2.0) chicken-sqrt-2)) 0.00001) #t))
 
+(define (ex1-8)
+  (define (good-enough? guess last)
+    (< (abs (- guess last)) 0.00001))
+
+  (define (cube-iter guess x last)
+    (if (good-enough? guess last)
+      guess
+      (cube-iter (improve guess x) x guess)))
+
+  (define (improve guess x)
+    (/ (+ (/ x (* guess guess)) (* 2 guess)) 3))
+
+  (define (cbrt x)
+    (cube-iter 1.0 x 0.0))
+
+  (define google-cbrt-2 1.25992104989)
+  (test (< (abs (- (cbrt 2.0) google-cbrt-2)) 0.00001) #t))
+
+(define (ex1-9)
+  (define (inc x) (+ x 1))
+  (define (dec x) (- x 1))
+
+  ;; recursive process
+  ;; (f+ 4 5)
+  ;; (inc (f+ 3 5))
+  ;; (inc (inc (f+ 2 5)))
+  ;; (inc (inc (inc (f+ 1 5))))
+  ;; (inc (inc (inc (inc (f+ 0 5)))))
+  ;; (inc (inc (inc (inc 5))))
+  ;; (inc (inc (inc 6)))
+  ;; (inc (inc 7))
+  ;; (inc 8)
+  ;; 9
+  (define (f+ a b)
+    (if (= a 0)
+      b
+      (inc (f+ (dec a) b))))
+
+  ;; iterative process
+  ;; (g+ 4 5)
+  ;; (g+ (dec 4) (inc 5))
+  ;; (g+ (dec 3) (inc 6))
+  ;; (g+ (dec 2) (inc 7))
+  ;; (g+ (dec 1) (inc 8))
+  ;; 9
+  (define (g+ a b)
+    (if (= a 0)
+      b
+      (g+ (dec a) (inc b))))
+
+  (test (f+ 4 5) (g+ 4 5)))
+
+(define (ex1-10)
+  (define (A x y)
+    (cond ((= y 0) 0)
+          ((= x 0) (* 2 y))
+          ((= y 1) 2)
+          (else (A (- x 1)
+                   (A x (- y 1))))))
+
+  ;; computes 2n
+  (define (f n) (A 0 n))
+  ;; computes 2^n if n > 0
+  (define (g n) (A 1 n))
+  ;; computes 2^2^(n - 1 times) for n > 1
+  (define (h n) (A 2 n))
+  ;; computes 5n^2
+  (define (k n) (* 5 n n))
+
+  (test (f 2) 4)
+  (test (g 2) 4)
+  (test (h 2) 4)
+  (test (k 2) 20)
+  )
+
 (for-each run-test '(ex1-1 ex1-2 ex1-3 ex1-4))
-(print "ex1-5 omitted\n")
-(print "ex1-6 omitted\n")
-(run-test 'ex1-7)
+(print "\n")
+(for-each print '("ex1-5 omitted\n"
+                  "ex1-6 omitted\n"))
+(for-each run-test '(ex1-7 ex1-8 ex1-9 ex1-10))
 
 (exit fail-count)
