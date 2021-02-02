@@ -1,18 +1,22 @@
-#!/usr/bin/env -S csi -s
+#!/usr/bin/env -S guile -s
+!#
 
 (define fail-count 0)
 
+(define (print message . args)
+  (apply simple-format #t message args))
+
 (define (test x y)
   (if ((if (number? x) = equal?) x y)
-    (print 'pass)
+    (print "~A\n" 'pass)
     (begin
-      (print "fail: expected " y " got " x)
+      (print "fail: expected ~A got ~A\n" y x)
       (set! fail-count (+ fail-count 1)))))
 
 (define (run-test name)
-  (print)
-  (print name)
-  ((eval name)))
+  (print "")
+  (print "~A\n" name)
+  ((eval name (interaction-environment))))
 
 (define (square x) (* x x))
 
@@ -20,12 +24,13 @@
   (+ (square x) (square y)))
 
 (define (ex1-1)
+  (define a 3)
+  (define b (+ a 1))
+
   (test 10 10)
   (test (+ 5 3 4) 12)
   (test (- 9 1) 8)
   (test (/ 6 2) 3)
-  (define a 3)
-  (define b (+ a 1))
   (test (+ a b (* a b)) 19)
   (test (= a b) #f)
   (test (if (and (> b a) (< b (* a b))) b a) b)
@@ -112,7 +117,8 @@
     (new-if (good-enough? guess x)
             guess
             ;; this will recurse forever
-            (sqrt-iter (improve guess x) x))))
+            (sqrt-iter (improve guess x) x)))
+  #f)
 
 (define (ex1-7)
   (define (good-enough? guess last)
@@ -127,8 +133,8 @@
   (test (< (abs (- (sqrt 2.0) chicken-sqrt-2)) 0.00001) #t))
 
 (for-each run-test '(ex1-1 ex1-2 ex1-3 ex1-4))
-(print "ex1-5 omitted")
-(print "ex1-6 omitted")
+(print "ex1-5 omitted\n")
+(print "ex1-6 omitted\n")
 (run-test 'ex1-7)
 
 (exit fail-count)
