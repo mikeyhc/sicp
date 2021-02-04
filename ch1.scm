@@ -88,7 +88,7 @@
 (define (sqrt-iter guess x)
   (if (good-enough? guess x)
     guess
-    (square-iter (improve guess x) x)))
+    (sqrt-iter (improve guess x) x)))
 
 (define (improve guess x)
   (average guess (/ x guess)))
@@ -584,6 +584,334 @@
   (test (fast-prime? 2821 1) #f)
   (test (fast-prime? 6601 1) #f))
 
+(define (sum term a next b)
+  (if (> a b)
+    0
+    (+ (term a)
+       (sum term (next a) next b))))
+
+(define (ex1-29)
+  (define (cube x) (* x x x))
+
+  (define (integral f a b dx)
+    (define (add-dx x) (+ x dx))
+
+    (* (sum f (+ a (/ dx 2.0)) add-dx b) dx))
+
+  (define (inc x) (+ 1 x))
+
+  (define (simpson f a b n)
+    (define h (/ (- b a) n))
+    (define (y k) (f (+ a (* h k))))
+    (define (s k)
+      (* (cond ((= k 0) 1)
+               ((= k n) 1)
+               ((even? k) 2)
+               (else 4))
+         (y k)))
+
+    (* (/ h 3) (sum s 0 inc n)))
+
+  (print "~A\n" (integral cube 0 1 0.01))
+  (print "~A\n" (integral cube 0 1 0.001))
+  (print "~A\n" (simpson cube 0 1 100))
+  (print "~A\n" (simpson cube 0 1 1000)))
+
+(define (sum-iter term a next b)
+  (define (iter a result)
+    (if (> a b)
+      result
+      (iter (next a) (+ (term a) result))))
+
+  (iter a 0))
+
+(define (ex1-30)
+  (define (cube x) (* x x x))
+  (define (inc x) (+ x 1))
+
+  (test (sum-iter cube 1 inc 10) (sum cube 1 inc 10)))
+
+(define (product term a next b)
+  (if (> a b)
+    1
+    (* (term a) (product term (next a) next b))))
+
+(define (product-iter term a next b)
+  (define (iter a result)
+    (if (> a b)
+      result
+      (iter (next a) (* (term a) result))))
+
+  (iter a 1))
+
+(define (ex1-31)
+  (define (inc x) (+ x 1))
+
+  (define (pi-f n)
+    (define num
+      (+ 2 (if (odd? n) (- n 1) n)))
+    (define denom
+      (+ 2 (if (even? n) (- n 1) n)))
+
+    (/ num denom))
+
+  (test (product (lambda (x) x) 1 inc 10) 3628800)
+  (test (product-iter (lambda (x) x) 1 inc 10) 3628800)
+  (print "~A\n" (exact->inexact (* 4 (product pi-f 1 inc 1000)))))
+
+(define (accumulate combiner null term a next b)
+  (if (> a b)
+    null
+    (combiner (term a)
+              (accumulate combiner null term (next a) next b))))
+
+(define (accumulate-iter combiner null term a next b)
+  (define (iter a result)
+    (if (> a b)
+      result
+      (iter (next a) (combiner (term a) result))))
+
+  (iter a null))
+
+(define (ex1-32)
+  (define (inc x) (+ x 1))
+  (define (cube x) (* x x x))
+
+  (define (sum-acc term a next b)
+    (accumulate + 0 term a next b))
+
+  (define (product-acc term a next b)
+    (accumulate * 1 term a next b))
+
+  (define (sum-acc-iter term a next b)
+    (accumulate-iter + 0 term a next b))
+
+  (define (product-acc-iter term a next b)
+    (accumulate-iter * 1 term a next b))
+
+  (test (sum cube 1 inc 10) (sum-acc cube 1 inc 10))
+  (test (product-acc cube 1 inc 10) (product cube 1 inc 10))
+  (test (sum-iter cube 1 inc 10) (sum-acc-iter cube 1 inc 10))
+  (test (product-acc-iter cube 1 inc 10) (product-iter cube 1 inc 10)))
+
+(define (filtered-accumulate combiner filter null term a next b)
+  (if (> a b)
+    null
+    (combiner
+      (if (filter a) (term a) null)
+      (filtered-accumulate combiner filter null term (next a) next b))))
+
+(define (ex1-33)
+  (define (inc x) (+ x 1))
+  (define (square x) (* x x))
+
+  (define (sum-sq-primes a b)
+    (filtered-accumulate + prime? 0 square a inc b))
+
+  (define (rel-prime-prod n)
+    (define (rel-prime? x) (= (gcd x n) 1))
+    (define (id x) x)
+
+    (filtered-accumulate * rel-prime? 1 id 1 inc (- n 1)))
+
+  (test (sum-sq-primes 2 10) 87)
+  (test (rel-prime-prod 9) 2240))
+
+;; ex1-34
+;; (define (f g) (g 2))
+;; (f f)
+;; (f 2)
+;; (2 2)
+;; error (in guile this will hang the REPL)
+
+(define tolerance 0.00001)
+
+(define (fixed-point f first-guess)
+  (define (close-enough? v1 v2)
+    (< (abs (- v1 v2)) tolerance))
+
+  (define (try guess)
+    (let ((next (f guess)))
+     (if (close-enough? guess next)
+       next
+       (try next))))
+
+  (try first-guess))
+
+(define (ex1-35)
+  (define gr (/ (+ 1 (sqrt 5)) 2))
+
+  (define (grt x)
+    (+ 1 (/ 1 x)))
+
+  (test #t (< (abs (- (fixed-point grt 1.0) gr)) tolerance)))
+
+(define (ex1-36)
+  (define (noisy-fixed-point f first-guess)
+    (define (close-enough? v1 v2)
+      (< (abs (- v1 v2)) tolerance))
+
+    (define (try guess)
+      (let ((next (f guess)))
+       (display guess)
+       (newline)
+       (if (close-enough? guess next)
+         next
+         (try next))))
+
+    (try first-guess))
+
+  (define (log-over-log x) (/ (log 1000) (log x)))
+  (define (avg-log-over-log x)
+    (average x (/ (log 1000) (log x))))
+
+  (print "~A\n" (noisy-fixed-point log-over-log 2))
+  (newline)
+  (print "~A\n" (noisy-fixed-point avg-log-over-log 2))
+  )
+
+(define (cont-frac n d k)
+  (define (iter i acc)
+    (if (= i 0)
+      acc
+      (iter (- i 1) (/ (n i) (+ (d i) acc)))))
+  (iter (- k 1) (/ (n k) (d k))))
+
+(define (ex1-37)
+  (define gr (/ (+ 1 (sqrt 5)) 2))
+  (test (< (abs (- (cont-frac (lambda (i) 1.0)
+                             (lambda (i) 1.0)
+                             11
+                             )
+                  (/ 1 gr))) 0.0001) #t)
+  )
+
+(define (ex1-38)
+  (define (e-f x)
+    (cond ((= x 2) x)
+          ((< x 5) 1)
+          ((= (remainder (- x 5) 3) 0)
+           (- x (/ (- x 2) 3)))
+          (else 1)))
+
+  (print "~A\n" (+ (cont-frac (lambda (i) 1.0) e-f 20) 2)))
+
+(define (ex1-39)
+  (define (tan-cf x k)
+    (cont-frac (lambda (i) (if (= i 1) x (-  (* x x))))
+               (lambda (i) (- (* i 2) 1))
+               k))
+
+  (test (tan 0.5) (tan-cf 0.5 10)))
+
+(define dx 0.00001)
+
+(define (deriv g)
+  (lambda (x)
+    (/ (- (g (+ x dx)) (g x))
+       dx)))
+
+(define (newton-transform g)
+  (lambda (x)
+    (- x (/ (g x) ((deriv g) x)))))
+
+(define (newtons-method g guess)
+  (fixed-point (newton-transform g) guess))
+
+(define (ex1-40)
+  (define (cube x) (* x x x))
+  (define (sq x) (* x x))
+  (define (cubic a b c)
+    (lambda (x) (+ (cube x) (* a (sq x) (* b x) c))))
+
+  (print "~A\n" (newtons-method (cubic 0 0 0) 1)))
+
+(define (ex1-41)
+  (define (double f)
+    (lambda (x) (f (f x))))
+  (define (inc x) (+ 1 x))
+
+  (test ((double inc) 0) 2)
+  (test (((double (double double)) inc) 5) 21))
+
+(define (compose f g)
+  (lambda (x) (f (g x))))
+
+(define (ex1-42)
+  (test ((compose (lambda (x) (* x x)) (lambda (x) (+ x 1))) 6) 49))
+
+(define (repeated f n)
+  (if (<= n 1)
+    f
+    (compose f (repeated f (- n 1)))))
+
+(define (ex1-43)
+  (test ((repeated (lambda (x) (* x x)) 2) 5) 625))
+
+(define (smooth f)
+  (lambda (x) (/ (+ (f (- x dx)) (f x) (f (+ x dx))) 3)))
+
+(define (n-smooth f n)
+  ((repeated smooth n) f))
+
+(define (ex1-44)
+  (define (cube x) (* x x x))
+  (print "~A\n" ((n-smooth cube 1) 5))
+  (print "~A\n" ((n-smooth cube 2) 5))
+  (print "~A\n" ((n-smooth cube 3) 5))
+  )
+
+(define (ex1-45)
+  (define (average-damp f)
+    (lambda (x) (average x (f x))))
+
+  (define (get-max-pow n)
+    (define (iter p r)
+      (if (< (- n r) 0)
+        (- p 1)
+        (iter (+ p 1) (* r 2))))
+    (iter 1 2))
+
+  (define (sq x) (* x x))
+
+  (define (pow b p)
+    (define (iter res a n)
+      (cond ((= n 0) res)
+            ((even? n) (iter res (sq a) (/ n 2)))
+            (else (iter (* res a) a (- n 1)))))
+    (iter 1 b p))
+
+  (define (nth-root n x)
+    (fixed-point ((repeated average-damp (get-max-pow n))
+                  (lambda (y) (/ x (pow y (- n 1)))))
+                 1.0))
+
+  (test (nth-root 5 32) 2.000001512995761))
+
+(define (iterative-improve good-enough? improve)
+  (lambda (guess)
+    (if (good-enough? guess)
+      guess
+      ((iterative-improve good-enough? improve) (improve guess)))))
+
+(define (ex1-46)
+  (define (fixed-point-ii f guess)
+    ((iterative-improve
+       (lambda (x) (< (abs (- x (f x))) tolerance))
+       f)
+     guess))
+
+  (define (sqrt-ii x)
+    ((iterative-improve
+       (lambda (y) (< (abs (- (* y y) x)) 0.0001))
+       (lambda (y) (average y (/ x y))))
+       1.0))
+
+  (define (cube x) (* x x x))
+
+  (test (fixed-point cube 1.0) (fixed-point-ii cube 1.0))
+  (test (< (abs (- (sqrt 25) (sqrt-ii 25))) 0.0001) #t))
+
 (for-each run-test '(ex1-1 ex1-2 ex1-3 ex1-4))
 (print "\n")
 (for-each print '("ex1-5 omitted\n"
@@ -597,6 +925,9 @@
 (for-each run-test '(ex1-21 ex1-22 ex1-23 ex1-24))
 (for-each print '("ex1-25 omitted\n"
                   "ex1-26 omitted\n"))
-(for-each run-test '(ex1-27 ex1-28))
+(for-each run-test '(ex1-27 ex1-28 ex1-29 ex1-30 ex1-31 ex1-32 ex1-33))
+(print "\nex1-34 omitted\n")
+(for-each run-test '(ex1-35 ex1-36 ex1-37 ex1-38 ex1-39 ex1-40 ex1-41 ex1-42
+                            ex1-43 ex1-44 ex1-45 ex1-46))
 
 (exit fail-count)
