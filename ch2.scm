@@ -712,6 +712,118 @@
   (test (reverse-r (list 1 2 3)) (list 3 2 1))
   (test (reverse-l (list 1 2 3)) (list 3 2 1)))
 
+(define (enumerate-interval low high)
+  (if (> low high)
+    nil
+    (cons low (enumerate-interval (+ low 1) high))))
+
+(define (flatmap proc seq)
+    (accumulate append nil (map proc seq)))
+
+(define (unique-pairs n)
+  (flatmap (lambda (i) (map (lambda (j) (list i j))
+                            (enumerate-interval 1 (- i 1))))
+           (enumerate-interval 2 n)))
+
+(define (smallest-divisor n)
+  (find-divisor n 2))
+
+(define (find-divisor n test-divisor)
+  (cond ((> (* test-divisor test-divisor) n) n)
+        ((divides? test-divisor n) test-divisor)
+        (else (find-divisor n (+ test-divisor 1)))))
+
+(define (divides? a b)
+  (= (remainder b a) 0))
+
+(define (prime? n)
+  (= n (smallest-divisor n)))
+
+(define (prime-sum? pair)
+  (prime? (+ (car pair) (cadr pair))))
+
+(define (make-pair-sum pair)
+  (list (car pair) (cadr pair) (+ (car pair) (cadr pair))))
+
+(define (prime-sum-pairs n)
+  (map make-pair-sum
+       (filter prime-sum? (unique-pairs n))))
+
+(define (ex2-40)
+  (test (unique-pairs 3) (list (list 2 1) (list 3 1) (list 3 2)))
+  (test (prime-sum-pairs 6)
+        (list (list 2 1 3) (list 3 2 5) (list 4 1 5) (list 4 3 7) (list 5 2 7)
+              (list 6 1 7) (list 6 5 11))))
+
+(define (unique-triple n)
+  (flatmap (lambda (i)
+             (flatmap (lambda (j)
+                        (map (lambda (k) (list i j k))
+                             (enumerate-interval 1 (- j 1))))
+                      (enumerate-interval 2 (- i 1))))
+    (enumerate-interval 3 n)))
+
+(define (sum-to-s n s)
+  (define (sum l) (accumulate + 0 l))
+  (filter (lambda (x) (= (sum x) s)) (unique-triple n)))
+
+(define (ex2-41)
+  (test (unique-triple 5) (list (list 3 2 1) (list 4 2 1) (list 4 3 1)
+                                (list 4 3 2) (list 5 2 1) (list 5 3 1)
+                                (list 5 3 2) (list 5 4 1) (list 5 4 2)
+                                (list 5 4 3)))
+  (test (sum-to-s 5 8) (list (list 4 3 1) (list 5 2 1))))
+
+(define (assert v)
+  (if (not v) (exit 1)))
+
+(define (any? pred l)
+  (cond ((null? l) #f)
+        ((pred (car l)) #t)
+        (else (any? pred (cdr l)))))
+
+(define (queens board-size)
+  (define empty-board nil)
+
+  (define (collides? a b)
+    (let ((a-row (car a))
+          (a-col (car (cdr a)))
+          (b-row (car b))
+          (b-col (car (cdr b))))
+      (or (= a-row b-row)
+          (= a-col b-col) ; should be impossible
+          (= (abs (/ (- a-row b-row) (- a-col b-col))) 1))))
+
+  (define (safe? col positions)
+    (let ((r (car (filter (lambda (x) (= col (car (cdr x)))) positions)))
+          (not-r (filter (lambda (x) (not (= col (car (cdr x))))) positions)))
+      (not (any? (lambda (p) (collides? r p)) not-r))))
+
+  (define (adjoin-position row col rest)
+    (cons (list row col) rest))
+
+  (define (queen-cols k)
+    (if (= k 0)
+      (list empty-board)
+      (filter
+        (lambda (positions) (safe? k positions))
+        (flatmap
+          (lambda (rest-of-queens)
+            (map (lambda (new-row)
+                   (adjoin-position new-row k rest-of-queens))
+                 (enumerate-interval 1 board-size)))
+          (queen-cols (- k 1))))))
+
+  (queen-cols board-size))
+
+(define (ex2-42)
+  (test (length (queens 8)) 92))
+
+;; ex2-43
+;; by performing the recursive call in the enumerate interval loop it is
+;; repeated board-size times each recursion. This increases the time from
+;; T to (board-size ^ board-size)T
+
 (for-each run-test '(ex2-1 ex2-2 ex2-3 ex2-4 ex2-5 ex2-6 ex2-7 ex2-8 ex2-9
                            ex2-10))
 (print "\nex2-11 has no tests\n")
@@ -723,4 +835,6 @@
 (print "\nex2-22 has no tests\n")
 (for-each run-test '(ex2-23 ex2-24 ex2-25 ex2-26 ex2-27 ex2-28 ex2-29 ex2-30
                             ex2-31 ex2-32 ex2-33 ex2-34 ex2-35 ex2-36 ex2-37
-                            ex2-38 ex2-39))
+                            ex2-38 ex2-39 ex2-40 ex2-41 ex2-42))
+(print "\nex2-43 has no tests\n")
+(print "\npicture language questions omitted for now\n")
