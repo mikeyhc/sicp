@@ -7,7 +7,7 @@
   (apply simple-format #t message args))
 
 (define (test x y)
-  (if ((if (number? x) = equal?) x y)
+  (if (equal? x y)
     (print "~A\n" 'pass)
     (begin
       (print "fail: expected ~A got ~A\n" y x)
@@ -777,10 +777,10 @@
 (define (assert v)
   (if (not v) (exit 1)))
 
-(define (any? pred l)
+(define (any pred l)
   (cond ((null? l) #f)
         ((pred (car l)) #t)
-        (else (any? pred (cdr l)))))
+        (else (any pred (cdr l)))))
 
 (define (queens board-size)
   (define empty-board nil)
@@ -797,7 +797,7 @@
   (define (safe? col positions)
     (let ((r (car (filter (lambda (x) (= col (car (cdr x)))) positions)))
           (not-r (filter (lambda (x) (not (= col (car (cdr x))))) positions)))
-      (not (any? (lambda (p) (collides? r p)) not-r))))
+      (not (any (lambda (p) (collides? r p)) not-r))))
 
   (define (adjoin-position row col rest)
     (cons (list row col) rest))
@@ -819,10 +819,133 @@
 (define (ex2-42)
   (test (length (queens 8)) 92))
 
+(define (ex2-53)
+  (test (list 'a 'b 'c) '(a b c))
+  (test (list (list 'george)) '((george)))
+  (test (cdr '((x1 x2) (y1 y2))) '((y1 y2)))
+  (test (cadr '((x1 x2) (y1 y2))) '(y1 y2))
+  (test (pair? (car '(a short list))) #f)
+  (test (memq 'red '((red shoes) (blue socks))) #f)
+  (test (memq 'red '(red shoes blue socks)) '(red shoes blue socks)))
+
 ;; ex2-43
 ;; by performing the recursive call in the enumerate interval loop it is
 ;; repeated board-size times each recursion. This increases the time from
 ;; T to (board-size ^ board-size)T
+
+(define (ex2-54)
+  (define (equal? a b)
+    (if (and (pair? a) (pair? b))
+      (if (equal? (car a) (car b))
+        (equal? (cdr a) (cdr b))
+        #f)
+      (eq? a b)))
+
+  (test (equal? '(a b c) '(a b c)) #t)
+  (test (equal? '(a b c d) '(a (b c) d)) #f))
+
+(define (ex2-55)
+  ;; this occurs because ''abracadabra is expanded to '(quote abracadabra),
+  ;; the first element of which is the quote function
+  (test (car ''abracadabra) 'quote)
+  (test (cdr ''abracadabra) '(abracadabra)))
+
+(define (all pred? l)
+  (cond ((null? l) #t)
+        ((not (pred? (car l))) #f)
+        (else (all pred? (cdr l)))))
+
+(define (variable? x) (symbol? x))
+
+(define (same-variable? v1 v2)
+  (and (variable? v1) (variable? v2) (eq? v1 v2)))
+
+(define (=number? exp num)
+  (and (number? exp) (= exp num)))
+
+(define (make-sum . args)
+  (let ((pargs (filter (lambda (x) (not (=number? x 0))) args)))
+    (cond ((all number? pargs) (accumulate + 0 pargs))
+          ((= (length pargs) 0) 0)
+          ((= (length pargs) 1) (car pargs))
+          (else (cons '+ pargs)))))
+
+(define (make-product . args)
+  (let ((pargs (filter (lambda (x) (not (=number? x 1))) args)))
+   (cond ((any (lambda (x) (=number? x 0)) pargs) 0)
+         ((all number? pargs) (accumulate * 1 pargs))
+         ((= (length pargs) 0) 1)
+         ((= (length pargs) 1) (car pargs))
+         (else (cons '* pargs)))))
+
+(define (make-exponentiation base exponent)
+  (cond ((=number? exponent 0) 1)
+        ((=number? exponent 1) base)
+        (else (list '** base exponent))))
+
+(define (sum? x)
+  (and (pair? x) (eq? (car x) '+)))
+
+(define (addend s)
+  (cadr s))
+
+(define (augend s)
+  (if (= 3 (length s))
+    (caddr s)
+    (cons '+ (cddr s))))
+
+(define (product? x)
+  (and (pair? x) (eq? (car x) '*)))
+
+(define (multiplier p)
+  (cadr p))
+
+(define (multiplicand p)
+  (if (= 3 (length p))
+    (caddr p)
+    (cons '* (cddr p))))
+
+(define (exponentiation? exp)
+  (and (pair? exp) (eq? (car exp) '**)))
+
+(define (base e)
+  (cadr e))
+
+(define (exponent e)
+  (caddr e))
+
+(define (deriv exp var)
+  (cond ((number? exp) 0)
+        ((variable? exp)
+         (if (same-variable? exp var) 1 0))
+        ((sum? exp)
+         (make-sum (deriv (addend exp) var)
+                   (deriv (augend exp) var)))
+        ((product? exp)
+         (make-sum
+           (make-product (multiplier exp)
+                         (deriv (multiplicand exp) var))
+           (make-product (deriv (multiplier exp) var)
+                         (multiplicand exp))))
+        ((exponentiation? exp)
+         (make-product (exponent exp)
+                       (make-exponentiation (base exp) (- (exponent exp) 1))))
+        (else
+          (error "unknown expression type -- DERIV" exp))))
+
+(define (ex2-56)
+  (test (deriv '(+ x 3) 'x) 1)
+  (test (deriv '(* x y) 'x) 'y)
+  (test (deriv '(* (* x y) (+ x 3)) 'x)
+        '(+ (* x y) (* y (+ x 3))))
+  (test (deriv '(** x 3) 'x) '(* 3 (** x 2)))
+  (test (deriv '(** x 2) 'x) '(* 2 x)))
+
+(define (ex2-57)
+  (test (deriv '(+ 3 x y) 'x) 1)
+  (test (deriv '(* 3 x y) 'x) '(* 3 y))
+  (test (deriv '(* x y (+ x 3)) 'x)
+        '(+ (* x y) (* y (+ x 3)))))
 
 (for-each run-test '(ex2-1 ex2-2 ex2-3 ex2-4 ex2-5 ex2-6 ex2-7 ex2-8 ex2-9
                            ex2-10))
@@ -837,4 +960,7 @@
                             ex2-31 ex2-32 ex2-33 ex2-34 ex2-35 ex2-36 ex2-37
                             ex2-38 ex2-39 ex2-40 ex2-41 ex2-42))
 (print "\nex2-43 has no tests\n")
-(print "\npicture language questions omitted for now\n")
+(print "picture language questions omitted for now\n")
+(for-each run-test '(ex2-53 ex2-54 ex2-55 ex2-56 ex2-57))
+
+(exit fail-count)
