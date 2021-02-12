@@ -947,6 +947,258 @@
   (test (deriv '(* x y (+ x 3)) 'x)
         '(+ (* x y) (* y (+ x 3)))))
 
+(define (nmemq v l)
+  (cond ((or (null? l) (null? (cdr l))) #f)
+        ((eq? v (cadr l)) l)
+        (else (nmemq v (cdr l)))))
+
+(define (ex2-58)
+  (define (sum? exp)
+    (and
+      (not (product? exp))
+      (not (exponentiation? exp))
+      (any (lambda (e) (eq? e '+)) exp)))
+
+  (define (product? exp)
+    (and
+      (not (exponentiation? exp))
+      (any (lambda (e) (eq? e '*)) exp)))
+
+  (define (exponentiation? exp)
+    (any (lambda (e) (eq? e '**)) exp))
+
+  (define (addend exp)
+    (car (nmemq '+ exp)))
+
+  (define (augend exp)
+    (let ((a (cdr (memq '+ exp))))
+     (if (= (length a) 1)
+       (car a)
+       a)))
+
+  (define (multiplier exp)
+    (car (nmemq '* exp)))
+
+  (define (multiplicand exp)
+    (let ((m (cdr (memq '* exp))))
+      (if (= (length m) 1)
+        (car m)
+        m)))
+
+  (define (base exp)
+    (car (nmemq '** exp)))
+
+  (define (exponent exp)
+    (let ((e (cdr (memq '** exp))))
+     (if (= (length e) 1)
+       (car e)
+       (error "exp not fully implemented"))))
+
+  (define (make-sum left right)
+    (cond ((=number? left 0) right)
+          ((=number? right 0) left)
+          ((and (number? left) (number? right)) (+ left right))
+          (else (list left '+ right))))
+
+  (define (make-product left right)
+    (cond ((or (=number? left 0) (=number? right 0)) 0)
+          ((=number? left 1) right)
+          ((=number? right 1) left)
+          ((and (number? left) (number? right)) (* left right))
+          (else (list left '* right))))
+
+  (define (make-exponentiation base exponent)
+    (cond ((=number? exponent 0) 1)
+          ((=number? exponent 1) base)
+          (else (list base '** exponent))))
+
+  (define (deriv exp var)
+    (cond ((number? exp) 0)
+          ((variable? exp)
+           (if (same-variable? exp var) 1 0))
+          ((sum? exp)
+           (make-sum (deriv (addend exp) var)
+                     (deriv (augend exp) var)))
+          ((product? exp)
+           (make-sum
+             (make-product (multiplier exp)
+                           (deriv (multiplicand exp) var))
+             (make-product (deriv (multiplier exp) var)
+                           (multiplicand exp))))
+          ((exponentiation? exp)
+           (make-product (exponent exp)
+                         (make-exponentiation (base exp) (- (exponent exp) 1))))
+          (else
+            (error "unknown expression type -- DERIV" exp))))
+
+  (test (deriv '(x + 3) 'x) 1)
+  (test (deriv '(x * y) 'x) 'y)
+  (test (deriv '(x * y * (x + 3)) 'x)
+        '((x * y) + (y * (x + 3))))
+  (test (deriv '(x ** 3) 'x) '(3 * (x ** 2)))
+  (test (deriv '(x ** 2) 'x) '(2 * x))
+  (test (deriv '(3 + x + y) 'x) 1)
+  (test (deriv '(3 * x * y) 'x) '(3 * y))
+  (test (deriv '(x * y * (x + 3)) 'x)
+        '((x * y) + (y * (x + 3)))))
+
+(define (element-of-set? x set)
+  (cond ((null? set) #f)
+        ((equal? x (car set)) #t)
+        (else (element-of-set? x (cdr set)))))
+
+(define (adjoin-set x set)
+  (if (element-of-set? x set)
+    set
+    (cons x set)))
+
+(define (intersection-set set1 set2)
+  (cond ((or (null? set1) (null? set2)) '())
+        ((element-of-set? (car set1) set2)
+         (cons (car set1)
+               (intersection-set (cdr set1) set2)))
+        (else (intersection-set (cdr set1) set2))))
+
+(define (union-set set1 set2)
+  (cond ((null? set1) set2)
+        ((null? set2) set1)
+        ((not (element-of-set? (car set1) set2))
+         (cons (car set1) (union-set (cdr set1) set2)))
+        (else (union-set (cdr set1) set2))))
+
+(define (ex2-59)
+  (test (union-set '(1 2 3) '(4 5 6)) '(1 2 3 4 5 6))
+  (test (union-set '(1 2 3) '(1 2 3)) '(1 2 3))
+  (test (union-set '() '(1 2 3)) '(1 2 3))
+  (test (union-set '(1 2 3) '()) '(1 2 3)))
+
+(define element-of-dset? element-of-set?)
+
+(define adjoin-dset cons)
+
+(define intersection-dset intersection-set)
+
+(define union-dset append)
+
+(define (ex2-60)
+  ;; this representation is much slower at lookups but very fast at insertion,
+  ;; so in the case of an insertion heavy workload with minimal lookups it could
+  ;; be used (but probably still a bad idea)
+
+  (test (element-of-dset? 1 '(2 2 1 3 4)) #t)
+  (test (element-of-dset? 2 '(1 2 2 3 4)) #t)
+  (test (element-of-dset? 5 '(1 2 2 3 4)) #f)
+
+  (test (adjoin-dset 1 '(2 3 4)) '(1 2 3 4))
+  (test (adjoin-dset 2 '(2 3 4)) '(2 2 3 4))
+
+  (test (intersection-dset '(2 2 3 4) '(3 3 2 4)) '(2 2 3 4))
+  (test (intersection-dset '(2 2 5 3) '(3 3 2 4)) '(2 2 3))
+  (test (intersection-dset '(1 2 3) '(4 5 6)) '())
+
+  (test (union-dset '(1 2 2) '(2 2 3 4)) '(1 2 2 2 2 3 4)))
+
+(define (element-of-oset? x set)
+  (cond ((null? set) #f)
+        ((= x (car set)) #t)
+        ((< x (car set)) #f)
+        (else (element-of-oset? x (cdr set)))))
+
+(define (intersection-oset set1 set2)
+  (if (or (null? set1) (null? set2))
+    '()
+    (let ((x1 (car set1))
+          (x2 (car set2)))
+     (cond ((= x1 x2)
+            (cons x1 (intersection-oset (cdr set1) (cdr set2))))
+           ((< x1 x2) (intersection-oset (cdr set1) set2))
+           ((< x2 x1) (intersection-oset set1 (cdr set2)))))))
+
+(define (adjoin-oset x set)
+  (cond ((null? set) (cons x set))
+        ((= x (car set)) set)
+        ((> (car set) x) (cons x set))
+        (else (cons (car set) (adjoin-oset x (cdr set))))))
+
+(define (ex2-61)
+  (test (adjoin-oset 1 '()) '(1))
+  (test (adjoin-oset 3 '(1 2)) '(1 2 3))
+  (test (adjoin-oset 2 '(1 3)) '(1 2 3))
+  (test (adjoin-oset 1 '(2 3)) '(1 2 3)))
+
+(define (union-oset set1 set2)
+  (cond ((null? set1) set2)
+        ((null? set2) set1)
+        (else
+          (let ((x1 (car set1))
+                (x2 (car set2)))
+            (cond ((= x1 x2) (cons x1 (union-oset (cdr set1) (cdr set2))))
+                  ((< x1 x2) (cons x1 (union-oset (cdr set1) set2)))
+                  ((< x2 x1) (cons x2 (union-oset set1 (cdr set2)))))))))
+
+(define (ex2-62)
+  (test (union-oset '(1) '()) '(1))
+  (test (union-oset '() '(1)) '(1))
+  (test (union-oset '(2) '(1)) '(1 2))
+  (test (union-oset '(1) '(2)) '(1 2))
+  (test (union-oset '(1 3) '(2 4)) '(1 2 3 4)))
+
+
+(define (entry tree) (car tree))
+(define (tree-left-branch tree) (cadr tree))
+(define (tree-right-branch tree) (caddr tree))
+(define (make-tree entry left right)
+  (list entry left right))
+
+(define (element-of-tset? x set)
+  (cond ((null? set) #f)
+        ((= x (entry set)) #t)
+        ((< x (entry set))
+         (element-of-tset? x (tree-left-branch set)))
+        ((> x (entry set))
+         (element-of-tset? x (tree-right-branch set)))))
+
+(define (adjoin-tset x set)
+  (cond ((null? set) (make-tree x '() '()))
+        ((= x (entry set)) set)
+        ((< x (entry set))
+         (make-tree (entry set)
+                    (adjoin-tset x (tree-left-branch set))
+                    (tree-right-branch set)))
+        ((> x (entry set))
+         (make-tree (entry set)
+                    (tree-left-branch set)
+                    (adjoin-tset x (tree-right-branch set))))))
+
+(define (tree->list-1 tree)
+  (if (null? tree)
+      '()
+      (append (tree->list-1 (tree-left-branch tree))
+              (cons (entry tree)
+                    (tree->list-1 (tree-right-branch tree))))))
+
+(define (tree->list-2 tree)
+  (define (copy-to-list tree result-list)
+    (if (null? tree)
+        result-list
+        (copy-to-list (tree-left-branch tree)
+                      (cons (entry tree)
+                            (copy-to-list (tree-right-branch tree)
+                                          result-list)))))
+  (copy-to-list tree '()))
+
+(define (ex2-63)
+  (define t1 '(7 (3 (1 () ()) (5 () ())) (9 () (11 () ()))))
+  (define t2 '(3 (1 () ()) (7 (5 () ()) (9 () (11 () ())))))
+  (define t3 '(5 (3 (1 () ()) ()) (9 (7 () ()) (11 () ()))))
+
+  ;; tree->list-1 in O(n log n)
+  ;; tree->list-2 in O(n)
+  ;; they both produce the same list
+  (test (equal? (tree->list-1 t1) (tree->list-2 t1)) #t)
+  (test (equal? (tree->list-1 t2) (tree->list-2 t2)) #t)
+  (test (equal? (tree->list-1 t3) (tree->list-2 t3)) #t))
+
 (for-each run-test '(ex2-1 ex2-2 ex2-3 ex2-4 ex2-5 ex2-6 ex2-7 ex2-8 ex2-9
                            ex2-10))
 (print "\nex2-11 has no tests\n")
@@ -961,6 +1213,7 @@
                             ex2-38 ex2-39 ex2-40 ex2-41 ex2-42))
 (print "\nex2-43 has no tests\n")
 (print "picture language questions omitted for now\n")
-(for-each run-test '(ex2-53 ex2-54 ex2-55 ex2-56 ex2-57))
+(for-each run-test '(ex2-53 ex2-54 ex2-55 ex2-56 ex2-57 ex2-58 ex2-59 ex2-60
+                            ex2-61 ex2-62 ex2-63))
 
 (exit fail-count)
