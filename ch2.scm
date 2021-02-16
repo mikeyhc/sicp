@@ -1199,6 +1199,186 @@
   (test (equal? (tree->list-1 t2) (tree->list-2 t2)) #t)
   (test (equal? (tree->list-1 t3) (tree->list-2 t3)) #t))
 
+(define (list->tree elements)
+  (car (partial-tree elements (length elements))))
+
+(define (partial-tree elts n)
+  (if (= n 0)
+    (cons '() elts)
+    (let ((left-size (quotient (- n 1) 2)))
+     (let ((left-result (partial-tree elts left-size)))
+      (let ((left-tree (car left-result))
+            (non-left-elts (cdr left-result))
+            (right-size (- n (+ left-size 1))))
+        (let ((this-entry (car non-left-elts))
+              (right-result (partial-tree (cdr non-left-elts)
+                                          right-size)))
+          (let ((right-tree (car right-result))
+                (remaining-elts (cdr right-result)))
+            (cons (make-tree this-entry left-tree right-tree)
+                  remaining-elts))))))))
+
+(define (flip f)
+  (lambda (a b) (f b a)))
+
+(define (ex2-64)
+  ;; a. the list is split into the median, and the elements smaller and larger
+  ;;    than it, from which the subtrees are built
+  ;; b. we have 2 constant time splits, and we operate on each element in the
+  ;;    list for a time of O(n)
+  (test (list->tree '(1 3 5 7 9 11))
+        '(5 (1 () (3 () ())) (9 (7 () ()) (11 () ())))))
+
+(define (ex2-65)
+  (define (union-set a b)
+    (fold-left (flip adjoin-tset) a (tree->list-2 b)))
+
+  (define (intersection-set a b)
+    (list->tree (filter (lambda (x) (element-of-tset? x a))
+                        (tree->list-2 b))))
+
+  (test (union-set '(2 (1 () ()) (3 () ())) '(1 () (2 () (3 () ()))))
+        '(2 (1 () ()) (3 () ())))
+
+  (test (intersection-set (list->tree '(1 3 5 7 9 11))
+                          (list->tree '(1 2 3 4 5)))
+        '(3 (1 () ()) (5 () ()))))
+
+(define key car)
+
+(define (lookup given-key set-of-records)
+  (cond ((null? set-of-records) #f)
+        ((= given-key (key (car set-of-records)))
+         (car set-of-records))
+        ((< given-key (key (car set-of-records)))
+         (lookup given-key (cadr set-of-records)))
+        (else (lookup given-key (caddr set-of-records)))))
+
+(define (ex2-66)
+  (test (lookup 1 '((3 b) ((1 a) () ()) ((5 c) () ()))) '(1 a))
+  (test (lookup 2 '((3 b) ((1 a) () ()) ((5 c) () ()))) #f))
+
+(define (make-leaf symbol weight)
+  (list 'leaf symbol weight))
+
+(define (leaf? object)
+  (eq? (car object) 'leaf))
+
+(define (symbol-leaf x)
+  (cadr x))
+
+(define (weight-leaf x)
+  (caddr x))
+
+(define (make-code-tree left right)
+  (list left
+        right
+        (append (symbols left) (symbols right))
+        (+ (weight left) (weight right))))
+
+(define (ct-left-branch tree) (car tree))
+
+(define (ct-right-branch tree) (cadr tree))
+
+(define (symbols tree)
+  (if (leaf? tree)
+    (list (symbol-leaf tree))
+    (caddr tree)))
+
+(define (weight tree)
+  (if (leaf? tree)
+    (weight-leaf tree)
+    (cadddr tree)))
+
+(define (decode bits tree)
+  (define (decode-1 bits current-branch)
+    (if (null? bits)
+      '()
+      (let ((next-branch (choose-branch (car bits) current-branch)))
+       (if (leaf? next-branch)
+         (cons (symbol-leaf next-branch)
+               (decode-1 (cdr bits) tree))
+         (decode-1 (cdr bits) next-branch)))))
+  (decode-1 bits tree))
+
+(define (choose-branch bit branch)
+  (cond ((= bit 0) (ct-left-branch branch))
+        ((= bit 1) (ct-right-branch branch))
+        (else (error "bad bit -- CHOOSE-BRANCH" bit))))
+
+(define (adjoin-wset x set)
+  (cond ((null? set) (list x))
+        ((< (weight x) (weight (car set))) (cons x set))
+        (else (cons (car set) (adjoin-wset x (cdr set))))))
+
+(define (make-leaf-set pairs)
+  (if (null? pairs)
+    '()
+    (let ((pair (car pairs)))
+     (adjoin-wset (make-leaf (car pair)      ; symbol
+                             (cadr pair))   ; frequency
+                  (make-leaf-set (cdr pairs))))))
+
+(define (ex2-67)
+  (define sample-tree
+    (make-code-tree (make-leaf 'A 4)
+                    (make-code-tree
+                      (make-leaf 'B 2)
+                      (make-code-tree (make-leaf 'D 1)
+                                      (make-leaf 'C 1)))))
+  (define sample-message '(0 1 1 0 0 1 0 1 0 1 1 1 0))
+
+  (test (decode sample-message sample-tree)
+        '(A D A B B C A)))
+
+(define (encode-symbol symbol tree)
+  (cond ((leaf? tree) '())
+        ((memq symbol (symbols (ct-left-branch tree)))
+         (cons 0 (encode-symbol symbol (ct-left-branch tree))))
+        ((memq symbol (symbols (ct-right-branch tree)))
+         (cons 1 (encode-symbol symbol (ct-right-branch tree))))
+        (else (error "unhandled symbol -- ENCODE-SYMBOL" symbol))))
+
+(define (encode message tree)
+  (if (null? message)
+    '()
+    (append (encode-symbol (car message) tree)
+            (encode (cdr message) tree))))
+
+(define (ex2-68)
+  (define sample-tree
+    (make-code-tree (make-leaf 'A 4)
+                    (make-code-tree
+                      (make-leaf 'B 2)
+                      (make-code-tree (make-leaf 'D 1)
+                                      (make-leaf 'C 1)))))
+  (define sample-message '(0 1 1 0 0 1 0 1 0 1 1 1 0))
+
+  (test (encode '(A D A B B C A) sample-tree) sample-message))
+
+(define (successive-merge leaf-set)
+  (if (null? leaf-set)
+    #f
+    (fold-left (flip make-code-tree) (car leaf-set) (cdr leaf-set)))
+  )
+
+(define (generate-huffman-tree pairs)
+  (successive-merge (make-leaf-set pairs)))
+
+(define (ex2-69)
+  (define sample-tree
+    (make-code-tree (make-leaf 'A 4)
+                    (make-code-tree
+                      (make-leaf 'B 2)
+                      (make-code-tree (make-leaf 'D 1)
+                                      (make-leaf 'C 1)))))
+
+  (define pairs '((A 4) (B 2) (D 1) (C 1)))
+  (define sample-message '(0 1 1 0 0 1 0 1 0 1 1 1 0))
+
+  (test (generate-huffman-tree pairs) sample-tree)
+  (test (encode '(A D A B B C A) (generate-huffman-tree pairs)) sample-message))
+
 (for-each run-test '(ex2-1 ex2-2 ex2-3 ex2-4 ex2-5 ex2-6 ex2-7 ex2-8 ex2-9
                            ex2-10))
 (print "\nex2-11 has no tests\n")
@@ -1214,6 +1394,7 @@
 (print "\nex2-43 has no tests\n")
 (print "picture language questions omitted for now\n")
 (for-each run-test '(ex2-53 ex2-54 ex2-55 ex2-56 ex2-57 ex2-58 ex2-59 ex2-60
-                            ex2-61 ex2-62 ex2-63))
+                            ex2-61 ex2-62 ex2-63 ex2-64 ex2-65 ex2-66 ex2-67
+                            ex2-68 ex2-69))
 
 (exit fail-count)
