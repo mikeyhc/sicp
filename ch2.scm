@@ -1502,16 +1502,17 @@
 
 (define (install-rectangular-package)
   ;; internal procedures
+  (define (square x) (mul x x))
   (define (real-part z) (car z))
   (define (imag-part z) (cdr z))
   (define (make-from-real-imag x y) (cons x y))
   (define (magnitude z)
-    (sqrt (+ (square (real-part z))
-             (square (imag-part z)))))
+    (squareroot (add (square (real-part z))
+                     (square (imag-part z)))))
   (define (angle z)
-    (atan (imag-part z) (real-part z)))
+    (arctan (imag-part z) (real-part z)))
   (define (make-from-mag-ang r a)
-    (cons (* r (cos a)) (* r (sin a))))
+    (cons (* r (cosine a)) (* r (sine a))))
   ;; interface to the rest of the system
   (define (tag x) (attach-tag 'rectangular x))
   (put 'real-part '(rectangular) real-part)
@@ -1526,16 +1527,17 @@
 
 (define (install-polar-package)
   ;; internal procedures
+  (define (square x) (mul x x))
   (define (magnitude z) (car z))
   (define (angle z) (cdr z))
   (define (make-from-mag-ang r a) (cons r a))
   (define (real-part z)
-    (* (magnitude z) (cos (angle z))))
+    (mul (magnitude z) (cosine (angle z))))
   (define (imag-part z)
-    (* (magnitude z) (sin (angle z))))
+    (mul (magnitude z) (sine (angle z))))
   (define (make-from-real-imag x y)
-    (cons (sqrt (+ (square x) (square y)))
-          (atan y x)))
+    (cons (squareroot (add (square x) (square y)))
+          (arctan y x)))
   ;; interface to the rest of the system
   (define (tag x) (attach-tag 'polar x))
   (put 'real-part '(polar) real-part)
@@ -1572,7 +1574,8 @@
 
 (define (op-deriv exp var)
   (cond ((number? exp) 0)
-        ((variable? exp) (if (same-variable? exp var) 1 0)) (else ((get 'deriv (operator exp)) (operands exp) var))))
+        ((variable? exp) (if (same-variable? exp var) 1 0))
+        (else ((get 'deriv (operator exp)) (operands exp) var))))
 
 (define operator car)
 (define operands cdr)
@@ -1778,10 +1781,38 @@
 (define get-coercion (coercion-table 'lookup-proc))
 (define put-coercion (coercion-table 'insert-proc!))
 
+(define (type-idx x)
+  (if (can-raise x) (+ 1 (type-idx (raisev x))) 0))
+
+(define (standardized-args args)
+  (let ((type-idxs (map type-idx args)))
+  (if (all (lambda (x) (= (car type-idxs) x)) (cdr type-idxs))
+    args
+    (let ((highest (apply min type-idxs)))
+     (standardized-args
+       (map (lambda (x) (if (= (type-idx x) highest) x (raisev x))) args))))))
+
+(define (apply-generic op . args)
+  (let ((type-tags (map type-tag args)))
+   (let ((proc (get op type-tags)))
+    (if proc
+      (drop (apply proc (map contents args)))
+      (let ((sargs (standardized-args args)))
+       (let ((stype-tags (map type-tag sargs)))
+        (let ((sproc (get op stype-tags)))
+         (if sproc
+           (drop (apply sproc (map contents sargs)))
+           (error "No method for these types" (list op type-tags))))))))))
+
 (define (add x y) (apply-generic 'add x y))
 (define (sub x y) (apply-generic 'sub x y))
 (define (mul x y) (apply-generic 'mul x y))
 (define (div x y) (apply-generic 'div x y))
+(define (sine x) (apply-generic 'sine x))
+(define (cosine x) (apply-generic 'cosine x))
+(define (arctan . args)
+  (apply apply-generic (cons 'arctan args)))
+(define (squareroot x) (apply-generic 'squareroot x))
 
 (define (install-scheme-number-package)
   (put 'add '(scheme-number scheme-number)
@@ -1795,6 +1826,14 @@
   (put 'equ? '(scheme-number scheme-number)
        (lambda (x y) (= x y)))
   (put '=zero? '(scheme-number) (lambda (x) (= x 0)))
+  (put 'can-raise 'scheme-number (lambda (x) (integer? x)))
+  (put 'raisev 'scheme-number (lambda (x) (make-rational x 1)))
+  (put 'can-project 'scheme-number (lambda (x) #f))
+  (put 'sine '(scheme-number) (lambda (x) (sin x)))
+  (put 'cosine '(scheme-number) (lambda (x) (cos x)))
+  (put 'arctan '(scheme-number) (lambda (x) (atan x)))
+  (put 'arctan '(scheme-number scheme-number) (lambda (x y) (atan x y)))
+  (put 'squareroot '(scheme-number) (lambda (x) (sqrt x)))
   'done)
 
 (define (make-scheme-number n)
@@ -1840,6 +1879,17 @@
 
   (put 'make 'rational
        (lambda (n d) (tag (make-rat n d))))
+  (put 'can-raise 'rational (lambda (x) #t))
+  (put 'raisev 'rational
+       (lambda (x) (make-complex-from-real-imag (/ (numer x) (denom x)) 0)))
+  (put 'can-project 'rational (lambda (x) #t))
+  (put 'project 'rational (lambda (x) (truncate (/ (numer x) (denom x)))))
+  (put 'sine '(rational) (lambda (x) (sin (/ (numer x) (denom x)))))
+  (put 'cosine '(rational) (lambda (x) (cos (/ (numer x) (denom x)))))
+  (put 'arctan '(rational) (lambda (x) (atan (/ (numer x) (denom x)))))
+  (put 'arctan '(rational rational)
+       (lambda (x y) (atan (/ (numer x) (denom x)) (/ (numer y) (denom y)))))
+  (put 'squareroot '(rational) (lambda (x) (sqrt (/ (numer x) (denom x)))))
   'done)
 
 (define (make-rational n d)
@@ -1891,12 +1941,16 @@
   (put '=zero? '(complex)
        (lambda (x) (and (= (real-part x) 0) (= (imag-part x) 0))))
   (put-coercion 'scheme-number 'complex scheme-number->complex)
+  (put 'can-raise 'complex (lambda (x) #f))
+  (put 'can-project 'complex (lambda (x) #t))
+  (put 'project 'complex
+       (lambda (x) (make-rational (truncate (real-part x)) 1)))
   'done)
 
 (define (make-complex-from-real-imag x y)
   ((get 'make-from-real-imag 'complex) x y))
 
-(define (make-complex-mag-ang r a)
+(define (make-complex-from-mag-ang r a)
   ((get 'make-from-mag-ang 'complex) r a))
 
 ;; ex2-77
@@ -2046,8 +2100,115 @@
   ;; this method is very limited, it won't coerce unless at least one element is
   ;; of the correct type, and if you have a method that takes 2 different
   ;; argument types it wont be able to discover that
-  (test (multiadd (make-complex-from-real-imag 1 0) 2 3)
-        (make-complex-from-real-imag 6 0)))
+  (test (multiadd (make-complex-from-real-imag 1 1) 2 3)
+        (make-complex-from-real-imag 6 1)))
+
+(define (can-raise v)
+  ((get 'can-raise (type-tag v)) v))
+
+(define (raisev v)
+  ((get 'raisev (type-tag v)) (contents v)))
+
+(define (ex2-83)
+  (test (can-raise 3) #t)
+  (test (raisev 3) (make-rational 3 1))
+  (test (can-raise (make-rational 3 1)) #t)
+  (test (raisev (make-rational 3 1)) (make-complex-from-real-imag 3 0))
+  (test (can-raise (make-complex-from-real-imag 3 0)) #f))
+
+(define (ex2-84)
+  (define (type-idx x)
+    (if (can-raise x) (+ 1 (type-idx (raisev x))) 0))
+
+  (define (standardized-args args)
+    (let ((type-idxs (map type-idx args)))
+    (if (all (lambda (x) (= (car type-idxs) x)) (cdr type-idxs))
+      args
+      (let ((highest (apply min type-idxs)))
+       (standardized-args
+         (map (lambda (x) (if (= (type-idx x) highest) x (raisev x))) args))))))
+
+  (define (apply-generic op . args)
+    (let ((type-tags (map type-tag args)))
+     (let ((proc (get op type-tags)))
+      (if proc
+        (apply proc (map contents args))
+        (let ((sargs (standardized-args args)))
+         (let ((stype-tags (map type-tag sargs)))
+          (let ((sproc (get op stype-tags)))
+           (if sproc
+             (apply sproc (map contents sargs))
+             (error "No method for these types" (list op type-tags))))))))))
+
+
+  (define (add x y)
+    (apply-generic 'add x y))
+
+  (test (add 3 (make-rational 2 1)) (make-rational 5 1))
+  (test (add 3 (make-complex-from-real-imag 2 1))
+        (make-complex-from-real-imag 5 1))
+  (test (add 3 3) 6)
+  (test (add (make-rational 2 1) 3) (make-rational 5 1)))
+
+(define (project x)
+  ((get 'project (type-tag x)) (contents x)))
+
+(define (can-project? x)
+  ((get 'can-project (type-tag x)) x))
+
+(define (drop x)
+  (cond ((not (or (number? x) (pair? x))) x)
+        ((not (can-project? x)) x)
+        ((equ? (raisev (project x)) x) (drop (project x)))
+        (else x)))
+
+(define (ex2-85)
+  (define (type-idx x)
+    (if (can-raise x) (+ 1 (type-idx (raisev x))) 0))
+
+  (define (standardized-args args)
+    (let ((type-idxs (map type-idx args)))
+    (if (all (lambda (x) (= (car type-idxs) x)) (cdr type-idxs))
+      args
+      (let ((highest (apply min type-idxs)))
+       (standardized-args
+         (map (lambda (x) (if (= (type-idx x) highest) x (raisev x))) args))))))
+
+  (define (apply-generic op . args)
+    (let ((type-tags (map type-tag args)))
+     (let ((proc (get op type-tags)))
+      (if proc
+        (drop (apply proc (map contents args)))
+        (let ((sargs (standardized-args args)))
+         (let ((stype-tags (map type-tag sargs)))
+          (let ((sproc (get op stype-tags)))
+           (if sproc
+             (drop (apply sproc (map contents sargs)))
+             (error "No method for these types" (list op type-tags))))))))))
+
+
+  (define (add x y)
+    (apply-generic 'add x y))
+
+  (test (drop (make-complex-from-real-imag 3 0)) 3)
+  (test (drop (make-rational 3 1)) 3)
+  (test (drop (make-complex-from-real-imag 3 1))
+        (make-complex-from-real-imag 3 1))
+  (test (drop (make-rational 3 2)) (make-rational 3 2))
+  (test (add (make-rational 4 2) 2) 4)
+  (test (add (make-complex-from-real-imag 3 0)
+             (make-complex-from-real-imag 2 0))
+        5))
+
+(define (ex2-86)
+  (let ((c1 (make-complex-from-real-imag (make-rational 3 4) 2))
+        (c2 (make-complex-from-mag-ang (make-rational 6 7) 0)))
+    (test (angle c1) 1.2120256565243244)
+    (test (magnitude c1) 2.1360009363293826)
+    (test (real-part c2) (make-rational 6 7))
+    (test (imag-part c2) 0)
+    )
+  )
 
 (for-each run-test '(ex2-1 ex2-2 ex2-3 ex2-4 ex2-5 ex2-6 ex2-7 ex2-8 ex2-9
                            ex2-10))
@@ -2075,6 +2236,6 @@
                   "ex2-77 has no tests\n"))
 (for-each run-test '(ex2-78 ex2-79 ex2-80))
 (print "\nex2-81 has no tests\n")
-(for-each run-test '(ex2-82))
+(for-each run-test '(ex2-82 ex2-83 ex2-84 ex2-85 ex2-86))
 
 (exit fail-count)
