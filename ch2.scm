@@ -1550,14 +1550,14 @@
        (lambda (r a) (tag (make-from-mag-ang r a))))
   'done)
 
-(define (apply-generic op . args)
-  (let ((type-tags (map type-tag args)))
-   (let ((proc (get op type-tags)))
-    (if proc
-      (apply proc (map contents args))
-      (error
-        "No method for these types -- APPLY-GENERIC"
-        (list op type-tags))))))
+; (define (apply-generic op . args)
+;   (let ((type-tags (map type-tag args)))
+;    (let ((proc (get op type-tags)))
+;     (if proc
+;       (apply proc (map contents args))
+;       (error
+;         "No method for these types -- APPLY-GENERIC"
+;         (list op type-tags))))))
 
 (define (real-part z) (apply-generic 'real-part z))
 (define (imag-part z) (apply-generic 'imag-part z))
@@ -1834,6 +1834,7 @@
   (put 'arctan '(scheme-number) (lambda (x) (atan x)))
   (put 'arctan '(scheme-number scheme-number) (lambda (x y) (atan x y)))
   (put 'squareroot '(scheme-number) (lambda (x) (sqrt x)))
+  (put 'neg '(scheme-number) (lambda (x) (- x)))
   'done)
 
 (define (make-scheme-number n)
@@ -1890,6 +1891,7 @@
   (put 'arctan '(rational rational)
        (lambda (x y) (atan (/ (numer x) (denom x)) (/ (numer y) (denom y)))))
   (put 'squareroot '(rational) (lambda (x) (sqrt (/ (numer x) (denom x)))))
+  (put 'neg '(rational) (lambda (x) (tag (make-rat (- (numer x)) (denom x)))))
   'done)
 
 (define (make-rational n d)
@@ -1945,6 +1947,9 @@
   (put 'can-project 'complex (lambda (x) #t))
   (put 'project 'complex
        (lambda (x) (make-rational (truncate (real-part x)) 1)))
+  (put 'neg '(complex)
+       (lambda (x) (tag (make-from-real-imag (- (real-part x))
+                                             (- (imag-part x))))))
   'done)
 
 (define (make-complex-from-real-imag x y)
@@ -2206,9 +2211,119 @@
     (test (angle c1) 1.2120256565243244)
     (test (magnitude c1) 2.1360009363293826)
     (test (real-part c2) (make-rational 6 7))
-    (test (imag-part c2) 0)
-    )
-  )
+    (test (imag-part c2) 0)))
+
+(define (install-polynomial-pacakge)
+  ;; internal procedures
+  ;; representation of poly
+  (define (make-poly variable term-list)
+    (cons variable term-list))
+  (define (variable p) (car p))
+  (define (term-list p) (cdr p))
+  (define (variable? x) (symbol? x))
+  (define (same-variable? v1 v2)
+    (and (variable? v1) (variable? v2) (eq? v1 v2)))
+  (define (add-poly p1 p2)
+    (if (same-variable? (variable p1) (variable p2))
+      (make-poly (variable p1)
+                 (add-terms (term-list p1)
+                            (term-list p2)))
+      (error "Polys not in same var -- ADD-POLY"
+             (list p1 p2))))
+  (define (mul-poly p1 p2)
+    (if (same-variable? (variable p1) (variable p2))
+      (make-poly (variable p1)
+                 (mul-terms (term-list p1)
+                            (term-list p2)))
+      (error "Polys not in same var -- MUL-POLY"
+             (list p1 p2))))
+  ;; representation of terms and term lists
+  (define (adjoin-term term term-list)
+    (if (=zero? (coeff term))
+      term-list
+      (cons term term-list)))
+	(define (the-empty-termlist) '())
+	(define (first-term term-list) (car term-list))
+	(define (rest-terms term-list) (cdr term-list))
+	(define (empty-termlist? term-list) (null? term-list))
+	(define (make-term order coeff) (list order coeff))
+	(define (order term) (car term))
+	(define (coeff term) (cadr term))
+  (define (add-terms L1 L2)
+    (cond ((empty-termlist? L1) L2)
+          ((empty-termlist? L2) L1)
+          (else
+            (let ((t1 (first-term L1)) (t2 (first-term L2)))
+             (cond ((> (order t1) (order t2))
+                    (adjoin-term
+                      t1 (add-terms (rest-terms L1) L2)))
+                   ((< (order t1) (order t2))
+                    (adjoin-term
+                      t2 (add-terms L1 (rest-terms L2))))
+                   (else
+                     (adjoin-term
+                       (make-term (order t1)
+                                  (add (coeff t1) (coeff t2)))
+                       (add-terms (rest-terms L1)
+                                  (rest-terms L2)))))))))
+  (define (mul-terms L1 L2)
+    (if (empty-termlist? L1)
+      (the-empty-termlist)
+      (add-terms (mul-term-by-all-terms (first-term L1) L2)
+                 (mul-terms (rest-terms L1) L2))))
+  (define (mul-term-by-all-terms t1 L)
+    (if (empty-termlist? L)
+      (the-empty-termlist)
+      (let ((t2 (first-term L)))
+       (adjoin-term
+         (make-term (+ (order t1) (order t2))
+                    (mul (coeff t1) (coeff t2)))
+         (mul-term-by-all-terms t1 (rest-terms L))))))
+  (define (neg-poly p)
+    (make-poly
+      (variable p)
+      (map (lambda (t) (make-term (order t) (neg (coeff t))))
+           (term-list p))))
+  (define (sub-poly p1 p2)
+    (add-poly p1 (neg-poly p2)))
+  ;; interface to rest of the system
+  (define (tag p) (attach-tag 'polynomial p))
+  (put 'add '(polynomial polynomial)
+       (lambda (p1 p2) (tag (add-poly p1 p2))))
+  (put 'mul '(polynomial polynomial)
+       (lambda (p1 p2) (tag (mul-poly p1 p2))))
+  (put 'make 'polynomial
+       (lambda (var terms) (tag (make-poly var terms))))
+  (put '=zero? '(polynomial)
+       (lambda (p) (= 0 (accumulate (lambda (t acc) (add (coeff t) acc)) 0
+                                    (term-list p)))))
+  (put 'can-raise 'polynomial (lambda (p) #f))
+  (put 'can-project 'polynomial (lambda (p) #f))
+  (put 'neg '(polynomial) (lambda (p) (tag (neg-poly p))))
+  (put 'sub '(polynomial polynomial) (lambda (p1 p2) (tag (sub-poly p1 p2))))
+  'done)
+
+(define (make-polynomial var terms)
+    ((get 'make 'polynomial) var terms))
+
+(install-polynomial-pacakge)
+(define (ex2-87)
+  (test (=zero? (make-polynomial 'x '((100 1) (2 2) (0 1)))) #f)
+  (test (=zero? (make-polynomial 'x '())) #t)
+  (test (=zero? (make-polynomial 'x '((100 0) (2 0) (0 0)))) #t))
+
+(define (neg x)
+  (apply-generic 'neg x))
+
+(define (ex2-88)
+  (test (neg (make-polynomial 'x '((100 1) (2 2) (0 1))))
+        (make-polynomial 'x '((100 -1) (2 -2) (0 -1))))
+  (test (sub (make-polynomial 'x '((100 1) (2 2) (0 1)))
+             (make-polynomial 'x '((100 1) (2 2) (0 1))))
+        (make-polynomial 'x '()))
+  (test (sub (make-polynomial 'x '((100 1) (2 2) (0 1)))
+             (make-polynomial 'x '((100 1) (2 1) (0 1))))
+        (make-polynomial 'x '((2 1)))))
 
 (for-each run-test '(ex2-1 ex2-2 ex2-3 ex2-4 ex2-5 ex2-6 ex2-7 ex2-8 ex2-9
                            ex2-10))
@@ -2236,6 +2351,6 @@
                   "ex2-77 has no tests\n"))
 (for-each run-test '(ex2-78 ex2-79 ex2-80))
 (print "\nex2-81 has no tests\n")
-(for-each run-test '(ex2-82 ex2-83 ex2-84 ex2-85 ex2-86))
+(for-each run-test '(ex2-82 ex2-83 ex2-84 ex2-85 ex2-86 ex2-87 ex2-88))
 
 (exit fail-count)
