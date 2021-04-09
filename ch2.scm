@@ -18,7 +18,11 @@
   (print "~A\n" name)
   ((eval name (interaction-environment))))
 
-(define (make-rat n d)
+(define (gcdg a b)
+  (print "gcd\n")
+  (apply-generic 'gcd a b))
+
+(define (make-rat-1 n d)
   (let ((g (gcd n d)))
    (if (and (>= n 0) (< d 0))
      (cons (/ (- 0 n) g) (/ (- 0 d) g))
@@ -35,10 +39,10 @@
   (display (denom x)))
 
 (define (ex2-1)
-  (let ((half (make-rat 1 2))
-        (other-half (make-rat 2 4))
-        (neg-half (make-rat -2 4))
-        (other-neg-half (make-rat 2 -4)))
+  (let ((half (make-rat-1 1 2))
+        (other-half (make-rat-1 2 4))
+        (neg-half (make-rat-1 -2 4))
+        (other-neg-half (make-rat-1 2 -4)))
     (test (numer half) 1)
     (test (denom half) 2)
     (test (numer other-half) 1)
@@ -1782,7 +1786,9 @@
 (define put-coercion (coercion-table 'insert-proc!))
 
 (define (type-idx x)
-  (if (can-raise x) (+ 1 (type-idx (raisev x))) 0))
+  (if (and (get 'can-raise (type-tag x)) (can-raise x))
+    (+ 1 (type-idx (raisev x)))
+    0))
 
 (define (standardized-args args)
   (let ((type-idxs (map type-idx args)))
@@ -1793,6 +1799,7 @@
        (map (lambda (x) (if (= (type-idx x) highest) x (raisev x))) args))))))
 
 (define (apply-generic op . args)
+  (print "~A - ~A\n" op args)
   (let ((type-tags (map type-tag args)))
    (let ((proc (get op type-tags)))
     (if proc
@@ -1835,6 +1842,8 @@
   (put 'arctan '(scheme-number scheme-number) (lambda (x y) (atan x y)))
   (put 'squareroot '(scheme-number) (lambda (x) (sqrt x)))
   (put 'neg '(scheme-number) (lambda (x) (- x)))
+  (put 'gcd '(scheme-number scheme-number)
+       (lambda (a b) (if (and (integer? a) (integer? b)) (gcd a b) 1)))
   'done)
 
 (define (make-scheme-number n)
@@ -1845,22 +1854,27 @@
   (define (numer x) (car x))
   (define (denom x) (cdr x))
   (define (make-rat n d)
-    (let ((g (gcd n d)))
-     (cons (/ n g) (/ d g))))
+    (print "making rat\n")
+    (let ((g (gcdg n d)))
+     (let ((nl (div n g))
+           (dl (div d g)))
+      (cons
+        (if (and (pair? nl) (pair? (car nl))) (car nl) nl)
+        (if (and (pair? dl) (pair? (car dl))) (car dl) dl)))))
   (define (add-rat x y)
-    (make-rat (+ (* (numer x) (denom y))
-                 (* (numer y) (denom x)))
-              (* (denom x) (denom y))))
+    (make-rat (add (mul (numer x) (denom y))
+                   (mul (numer y) (denom x)))
+              (mul (denom x) (denom y))))
   (define (sub-rat x y)
-    (make-rat (- (* (numer x) (denom y))
-                 (* (numer y) (denom x)))
-              (* (denom x) (denom y))))
+    (make-rat (sub (mul (numer x) (denom y))
+                   (mul (numer y) (denom x)))
+              (mul (denom x) (denom y))))
   (define (mul-rat x y)
-    (make-rat (* (numer x) (numer y))
-              (* (denom x) (denom y))))
+    (make-rat (mul (numer x) (numer y))
+              (mul (denom x) (denom y))))
   (define (div-rat x y)
-    (make-rat (* (numer x) (denom y))
-              (* (denom x) (numer y))))
+    (make-rat (mul (numer x) (denom y))
+              (mul (denom x) (numer y))))
 
   ;; interface to rest of the system
   (define (tag x) (attach-tag 'rational x))
@@ -1874,24 +1888,27 @@
        (lambda (x y) (tag (div-rat x y))))
   (put 'equ? '(rational rational)
        (lambda (x y)
-         (and (= (numer x) (numer y))
-              (= (denom x) (denom y)))))
-  (put '=zero? '(rational) (lambda (x) (= (numer x) 0)))
+         (and (equ? (numer x) (numer y))
+              (equ? (denom x) (denom y)))))
+  (put '=zero? '(rational) (lambda (x) (=zero? (numer x))))
 
   (put 'make 'rational
        (lambda (n d) (tag (make-rat n d))))
   (put 'can-raise 'rational (lambda (x) #t))
   (put 'raisev 'rational
-       (lambda (x) (make-complex-from-real-imag (/ (numer x) (denom x)) 0)))
+       (lambda (x) (make-complex-from-real-imag (div (numer x) (denom x)) 0)))
   (put 'can-project 'rational (lambda (x) #t))
-  (put 'project 'rational (lambda (x) (truncate (/ (numer x) (denom x)))))
+  (put 'project 'rational
+       (lambda (x)
+         (let ((d (div (numer x) (denom x))))
+          (if (and (pair? d) (pair? (car d))) (car d) d))))
   (put 'sine '(rational) (lambda (x) (sin (/ (numer x) (denom x)))))
   (put 'cosine '(rational) (lambda (x) (cos (/ (numer x) (denom x)))))
   (put 'arctan '(rational) (lambda (x) (atan (/ (numer x) (denom x)))))
   (put 'arctan '(rational rational)
        (lambda (x y) (atan (/ (numer x) (denom x)) (/ (numer y) (denom y)))))
   (put 'squareroot '(rational) (lambda (x) (sqrt (/ (numer x) (denom x)))))
-  (put 'neg '(rational) (lambda (x) (tag (make-rat (- (numer x)) (denom x)))))
+  (put 'neg '(rational) (lambda (x) (tag (make-rat (neg (numer x)) (denom x)))))
   'done)
 
 (define (make-rational n d)
@@ -2159,7 +2176,10 @@
   ((get 'project (type-tag x)) (contents x)))
 
 (define (can-project? x)
-  ((get 'can-project (type-tag x)) x))
+  (let ((cpf (get 'can-project (type-tag x))))
+    (if cpf
+      (cpf x)
+      #f)))
 
 (define (drop x)
   (cond ((not (or (number? x) (pair? x))) x)
@@ -2213,28 +2233,62 @@
     (test (real-part c2) (make-rational 6 7))
     (test (imag-part c2) 0)))
 
-(define (install-polynomial-pacakge)
+(define (zip . args)
+  (if (any null? args)
+    '()
+    (cons (map car args) (apply zip (map cdr args)))))
+
+(define (install-dense-poly-package)
   ;; internal procedures
-  ;; representation of poly
-  (define (make-poly variable term-list)
+  (define (make-dense-poly variable term-list)
+    (cons variable term-list))
+  (define (variable p) (car p))
+  (define (term-list p)
+    (zip (reverse (enumerate-interval 0 (- (length (cdr p)) 1))) (cdr p)))
+
+  ;; interface to rest of the system
+  (define (tag p) (attach-tag 'dense p))
+  (put 'make 'dense
+       (lambda (var terms) (tag (make-dense-poly var terms))))
+  (put 'variable '(dense) (lambda (p) (variable p)))
+  (put 'term-list '(dense) (lambda (p) (term-list p)))
+  (put 'can-project 'dense (lambda (p) #f))
+  (put 'can-raise 'dense (lambda (p) #f)))
+
+(define (install-sparse-poly-package)
+  ;; internal procedures
+  (define (make-sparse-poly variable term-list)
     (cons variable term-list))
   (define (variable p) (car p))
   (define (term-list p) (cdr p))
-  (define (variable? x) (symbol? x))
-  (define (same-variable? v1 v2)
-    (and (variable? v1) (variable? v2) (eq? v1 v2)))
+
+  ;; interface to rest of the system
+  (define (tag p) (attach-tag 'sparse p))
+  (put 'make 'sparse
+       (lambda (var terms) (tag (make-sparse-poly var terms))))
+  (put 'variable '(sparse) (lambda (p) (variable p)))
+  (put 'term-list '(sparse) (lambda (p) (term-list p)))
+  (put 'can-project 'sparse (lambda (p) #f))
+  (put 'can-raise 'sparse (lambda (p) #f)))
+
+(define (install-polynomial-pacakge)
+  ;; internal procedures
+  (define (make-from-dense variable term-list)
+    ((get 'make 'dense) variable term-list))
+  (define (make-from-sparse variable term-list)
+    ((get 'make 'sparse) variable term-list))
   (define (add-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
-      (make-poly (variable p1)
-                 (add-terms (term-list p1)
-                            (term-list p2)))
+      (make-from-sparse (variable p1)
+                        (add-terms (term-list p1)
+                                   (term-list p2)))
       (error "Polys not in same var -- ADD-POLY"
              (list p1 p2))))
   (define (mul-poly p1 p2)
     (if (same-variable? (variable p1) (variable p2))
-      (make-poly (variable p1)
-                 (mul-terms (term-list p1)
-                            (term-list p2)))
+      (make-from-sparse (variable p1)
+                        (mul-terms (term-list p1)
+                                   (term-list p2)))
       (error "Polys not in same var -- MUL-POLY"
              (list p1 p2))))
   ;; representation of terms and term lists
@@ -2279,21 +2333,60 @@
          (make-term (+ (order t1) (order t2))
                     (mul (coeff t1) (coeff t2)))
          (mul-term-by-all-terms t1 (rest-terms L))))))
+  (define (neg-term t)
+    (make-term (order t) (neg (coeff t))))
   (define (neg-poly p)
-    (make-poly
+    (make-from-sparse
       (variable p)
-      (map (lambda (t) (make-term (order t) (neg (coeff t))))
-           (term-list p))))
+      (map neg-term (term-list p))))
   (define (sub-poly p1 p2)
     (add-poly p1 (neg-poly p2)))
+  (define (div-poly p1 p2)
+    (if (same-variable? (variable p1) (variable p2))
+      (map (lambda (tl) (make-polynomial-from-sparse (variable p1) tl))
+           (div-terms (term-list p1) (term-list p2)))
+      (error p1 " and " p2 " have different variables")))
+  (define (div-terms L1 L2)
+    (if (empty-termlist? L1)
+      (list (the-empty-termlist) (the-empty-termlist))
+      (let ((t1 (first-term L1))
+            (t2 (first-term L2)))
+        (if (> (order t2) (order t1))
+          (list (the-empty-termlist) L1)
+          (let ((new-c (div (coeff t1) (coeff t2)))
+                (new-o (- (order t1) (order t2))))
+            (let ((rest-of-result
+                    (div-terms (add-terms L1 (map neg-term
+                                                  (mul-term-by-all-terms
+                                                        (make-term new-o new-c)
+                                                        L2)))
+                               L2)))
+              (list (adjoin-term (make-term new-o new-c)
+                                 (car rest-of-result))
+                    (cadr rest-of-result))))))))
+  (define (remainder-terms a b)
+    (cadr (div-terms a b)))
+  (define (gcd-terms a b)
+    (if (empty-termlist? b)
+      a
+      (gcd-terms b (remainder-terms a b))))
+  (define (gcd-poly a b)
+    (if (same-variable? (variable a) (variable b))
+      (make-polynomial (variable a) (gcd-terms (term-list a) (term-list b)))
+      (error a " and " b " have different variables")))
+
   ;; interface to rest of the system
   (define (tag p) (attach-tag 'polynomial p))
   (put 'add '(polynomial polynomial)
        (lambda (p1 p2) (tag (add-poly p1 p2))))
   (put 'mul '(polynomial polynomial)
        (lambda (p1 p2) (tag (mul-poly p1 p2))))
-  (put 'make 'polynomial
-       (lambda (var terms) (tag (make-poly var terms))))
+  (put 'make-from-sparse 'polynomial
+       (lambda (var terms) (tag (make-from-sparse var terms))))
+  (put 'make-from-dense 'polynomial
+       (lambda (var terms) (tag (make-from-dense var terms))))
+  (put 'variable '(polynomial) variable)
+  (put 'term-list '(polynomial) term-list)
   (put '=zero? '(polynomial)
        (lambda (p) (= 0 (accumulate (lambda (t acc) (add (coeff t) acc)) 0
                                     (term-list p)))))
@@ -2301,12 +2394,29 @@
   (put 'can-project 'polynomial (lambda (p) #f))
   (put 'neg '(polynomial) (lambda (p) (tag (neg-poly p))))
   (put 'sub '(polynomial polynomial) (lambda (p1 p2) (tag (sub-poly p1 p2))))
+  (put 'div '(polynomial polynomial) (lambda (p1 p2) (div-poly p1 p2)))
+  (put 'gcd '(polynomial polynomial) (lambda (p1 p2) (gcd-poly p1 p2)))
   'done)
 
 (define (make-polynomial var terms)
-    ((get 'make 'polynomial) var terms))
+  ((get 'make-from-sparse 'polynomial) var terms))
+
+(define (make-polynomial-from-sparse var terms)
+  ((get 'make-from-sparse 'polynomial) var terms))
+
+(define (make-polynomial-from-dense var terms)
+  ((get 'make-from-dense 'polynomial) var terms))
+
+(define (variable p)
+  (apply-generic 'variable p))
+
+(define (term-list p)
+  (apply-generic 'term-list p))
 
 (install-polynomial-pacakge)
+(install-dense-poly-package)
+(install-sparse-poly-package)
+
 (define (ex2-87)
   (test (=zero? (make-polynomial 'x '((100 1) (2 2) (0 1)))) #f)
   (test (=zero? (make-polynomial 'x '())) #t)
@@ -2325,6 +2435,30 @@
              (make-polynomial 'x '((100 1) (2 1) (0 1))))
         (make-polynomial 'x '((2 1)))))
 
+(define (ex2-89)
+  (test (zip '(a b c) '(1 2 3)) '((a 1) (b 2) (c 3)))
+  (test (variable (make-polynomial-from-dense 'x '(3 2 1))) 'x)
+  (test (term-list (make-polynomial-from-dense 'x '(3 2 1)))
+        '((2 3) (1 2) (0 1))))
+
+(define (ex2-90)
+  (test (term-list (make-polynomial-from-sparse 'x '((2 3) (1 2) (0 1))))
+        (term-list (make-polynomial-from-dense 'x '(3 2 1)))))
+
+(define (ex2-91)
+  (test (div (make-polynomial 'x '((5 1) (0 -1)))
+             (make-polynomial 'x '((2 1) (0 -1))))
+        (list (make-polynomial 'x '((3 1) (1 1)))
+              (make-polynomial 'x '((1 1) (0 -1))))))
+
+(define (ex2-93)
+  (define p1 (make-polynomial 'x '((2 1) (0 1))))
+  (define p2 (make-polynomial 'x '((3 1) (0 1))))
+  (define rf (make-rational p2 p1))
+
+  (test (add rf rf) #f))
+
+#|
 (for-each run-test '(ex2-1 ex2-2 ex2-3 ex2-4 ex2-5 ex2-6 ex2-7 ex2-8 ex2-9
                            ex2-10))
 (print "\nex2-11 has no tests\n")
@@ -2351,6 +2485,11 @@
                   "ex2-77 has no tests\n"))
 (for-each run-test '(ex2-78 ex2-79 ex2-80))
 (print "\nex2-81 has no tests\n")
-(for-each run-test '(ex2-82 ex2-83 ex2-84 ex2-85 ex2-86 ex2-87 ex2-88))
+(for-each run-test '(ex2-82 ex2-83 ex2-84 ex2-85 ex2-86 ex2-87 ex2-88 ex2-89
+                            ex2-90 ex2-91))
+(newline)
+(print "ex2-92 omitted due to amount of work involved\n")
+(for-each run-test '(ex2-93))
 
 (exit fail-count)
+|#
